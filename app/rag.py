@@ -6,24 +6,26 @@ from langchain_community.document_loaders import TextLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings
-from .config import KNOWLEDGE_DIR
 
 logger = logging.getLogger(__name__)
 embeddings = OpenAIEmbeddings()
 
 def load_documents() -> List:
     """Загружает документы из папки knowledge/ (поддерживает .txt, .md, .pdf)"""
+    # Путь к папке knowledge/ — относительно корня проекта
+    knowledge_dir = os.path.join(os.path.dirname(__file__), "..", "knowledge")
     docs = []
-    if not os.path.exists(KNOWLEDGE_DIR):
-        logger.warning(f"Папка {KNOWLEDGE_DIR} не найдена. Создаём пустую.")
-        os.makedirs(KNOWLEDGE_DIR, exist_ok=True)
-        return []
 
-    for filename in os.listdir(KNOWLEDGE_DIR):
-        filepath = os.path.join(KNOWLEDGE_DIR, filename)
+    if not os.path.exists(knowledge_dir):
+        logger.warning(f"Папка knowledge не найдена: {knowledge_dir}")
+        return docs
+
+    for filename in os.listdir(knowledge_dir):
+        if filename.startswith("."):  # игнорируем скрытые файлы
+            continue
+        filepath = os.path.join(knowledge_dir, filename)
         try:
             if filename.endswith((".txt", ".md")):
-                # Используем TextLoader для .txt и .md
                 loader = TextLoader(filepath, encoding="utf-8")
                 docs.extend(loader.load())
                 logger.info(f"Загружен текстовый файл: {filename}")
@@ -39,8 +41,7 @@ def load_documents() -> List:
     return docs
 
 def create_or_load_vectorstore():
-    """Создаёт или загружает FAISS-индекс. Индекс сохраняется в /tmp/faiss_index (Render-friendly)"""
-    # В Render /tmp — writable filesystem
+    """Создаёт или загружает FAISS-индекс. Индекс сохраняется в /tmp/faiss_index — единственное writable место в Render."""
     faiss_path = "/tmp/faiss_index"
 
     if os.path.exists(faiss_path):
@@ -64,7 +65,7 @@ def create_or_load_vectorstore():
     logger.info(f"Индекс сохранён в {faiss_path}")
     return vectorstore
 
-# Глобальный retriever
+# Global retriever
 retriever = None
 
 def init_retriever():
@@ -72,7 +73,7 @@ def init_retriever():
     vectorstore = create_or_load_vectorstore()
     if vectorstore:
         retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-        logger.info("Retriever успешно инициализирован.")
+        logger.info("✅ Retriever успешно инициализирован.")
     else:
         retriever = None
-        logger.warning("Retriever не создан (нет документов).")
+        logger.warning("⚠️ Retriever не создан (нет документов).")
