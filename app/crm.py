@@ -12,9 +12,8 @@ async def send_lead_to_crm(lead: LeadInfo, user_id: str, full_name: str, channel
         logger.warning("ALBATO_WEBHOOK_URL не задан")
         return
 
-    # Не отправляем "пустые" запросы (например, приветствия)
-    if lead.intent == "задать_вопрос" and "привет" in lead.summary.lower():
-        logger.info("Пропускаем отправку приветствия в CRM")
+    # Не отправляем пустые запросы
+    if not original_message.strip() or len(original_message) < 5:
         return
 
     payload = {
