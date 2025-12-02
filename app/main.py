@@ -7,7 +7,7 @@ from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 
 from .rag import init_retriever, retriever
-from .agents import classify_and_qualify
+from .agents import classify_and_qualify, is_greeting
 from .crm import send_lead_to_crm
 
 load_dotenv()
@@ -30,6 +30,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.info(f"Сообщение от {user.full_name} ({user.id}): {text}")
 
+    # Если приветствие — отвечаем, но НЕ отправляем в CRM
+    if is_greeting(text):
+        await update.message.reply_text(
+            "Здравствуйте! 👋\nЯ — ИИ-ассистент агентства NeuroPragmat.\n\nЧем могу помочь?\n\n✅ Автоматизация лидогенерации\n✅ Интеграция с AmoCRM\n✅ ИИ-консультанты 24/7"
+        )
+        return
+
+    # Обработка содержательного запроса
     context_str = ""
     if retriever:
         try:
@@ -42,10 +50,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lead_info = classify_and_qualify(user_message=text, context=context_str)
     except Exception as e:
         logger.error(f"Ошибка агента: {e}")
-        await update.message.reply_text("Спасибо за обращение! Менеджер свяжется с вами.")
+        await update.message.reply_text("Спасибо за обращение! Менеджер свяжется с вами в ближайшее время.")
         return
 
-    # Умный ответ: не запрашиваем контакты, если они уже есть
+    # Формируем ответ
     if lead_info.name and lead_info.contact:
         reply = f"Спасибо за ваш запрос! {lead_info.summary} Наш менеджер свяжется с вами в ближайшее время."
     elif lead_info.intent == "связаться_с_менеджером" or lead_info.is_hot:
@@ -55,6 +63,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(reply)
 
+    # Отправляем ТОЛЬКО содержательные запросы в CRM
     await send_lead_to_crm(
         lead=lead_info,
         user_id=str(user.id),
@@ -69,13 +78,11 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_m
 async def startup_event():
     logger.info("Запуск FirstContact AI (NeuroPragmat)...")
     init_retriever()
-
-    # Инициализация Telegram Application
     await application.initialize()
     await application.start()
 
     webhook_url = os.getenv("WEBHOOK_URL")
-    if webhook_path := webhook_url:
+    if webhook_url:
         try:
             await application.bot.set_webhook(webhook_url)
             logger.info(f"Telegram webhook установлен: {webhook_url}")

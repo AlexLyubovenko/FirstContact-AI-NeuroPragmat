@@ -12,6 +12,11 @@ async def send_lead_to_crm(lead: LeadInfo, user_id: str, full_name: str, channel
         logger.warning("ALBATO_WEBHOOK_URL не задан")
         return
 
+    # Не отправляем "пустые" запросы (например, приветствия)
+    if lead.intent == "задать_вопрос" and "привет" in lead.summary.lower():
+        logger.info("Пропускаем отправку приветствия в CRM")
+        return
+
     payload = {
         "name": f"Запрос от {lead.name or full_name or 'Клиента'}",
         "query": original_message,
@@ -29,10 +34,6 @@ async def send_lead_to_crm(lead: LeadInfo, user_id: str, full_name: str, channel
             "source": f"{channel} ({user_id})"
         }
     }
-
-    # Явно передаём телефон/email, если есть
-    if lead.contact:
-        payload["query"] += f"\nКонтакт: {lead.contact}"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

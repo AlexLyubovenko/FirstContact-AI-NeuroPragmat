@@ -1,6 +1,7 @@
 # app/agents.py
 import logging
 import re
+from typing import List
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.output_parsers import PydanticOutputParser
@@ -15,15 +16,28 @@ class LeadInfo(BaseModel):
     summary: str = Field(description="резюме запроса (1 предложение)")
     is_hot: bool = Field(description="True, если клиент явно просит связаться или упоминает срочность")
 
+def is_greeting(text: str) -> bool:
+    """Проверяет, является ли текст приветствием"""
+    greetings: List[str] = [
+        "привет", "здравствуйте", "хай", "hi", "hello",
+        "добрый день", "доброе утро", "добрый вечер",
+        "приветствую", "приветики", "йо", "приветствую"
+    ]
+    text_lower = text.lower()
+    return any(greeting in text_lower for greeting in greetings)
+
 def extract_name(text: str) -> str:
     patterns = [
-        r'(?:меня\s+зовут|я\s+—|имя\s+моё|имя\s+)\s*([А-Яа-яЁё\s]+)',
-        r'^([А-Я][а-я]+(?:\s+[А-Я][а-я]+)*)'
+        r'(?:меня\s+зовут|я\s+—|имя\s+моё|имя\s+мое|зовут\s+меня)\s*([А-Яа-яЁё\s]+)',
+        r'\b([А-Я][а-я]+(?:\s+[А-Я][а-я]+){0,2})\b'
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE | re.UNICODE)
         if match:
-            return match.group(1).strip()
+            name = match.group(1).strip()
+            # Исключаем ложные срабатывания (например, "меня зовут привет")
+            if len(name) > 2 and not is_greeting(name):
+                return name
     return ""
 
 def extract_phone(text: str) -> str:
@@ -43,11 +57,11 @@ prompt = ChatPromptTemplate.from_template(
 
 Проанализируйте сообщение и извлеките структурированную информацию.
 Особое внимание уделите:
-- Наличию имени (например, "меня зовут...", "я — ...", "Дмитрий")
+- Наличию имени (примеры: "меня зовут Алексей", "Дмитрий из юрфирмы")
 - Наличию телефона (форматы: +7..., 8..., 7... без пробелов)
-- Намерению клиента (заказать услугу, узнать цену, задать вопрос, связаться с менеджером)
+- Намерению: заказать услугу, узнать цену, задать вопрос или связаться с менеджером
 
-Если имя или телефон явно указаны — не запрашивайте их повторно.
+ВАЖНО: Если имя похоже на приветствие (например, "Привет", "Хай") — игнорируйте его.
 
 {format_instructions}
 """
@@ -57,6 +71,14 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 def classify_and_qualify(user_message: str, context: str = "") -> LeadInfo:
     try:
+        # Не извлекаем имя/телефон из приветствий (на всякий случай)
+        if is_greeting(user_message):
+            return LeadInfo(
+                intent="задать_вопрос",
+                summary="Клиент поприветствовал бота",
+                is_hot=False
+            )
+
         name = extract_name(user_message)
         phone = extract_phone(user_message)
 
@@ -67,10 +89,9 @@ def classify_and_qualify(user_message: str, context: str = "") -> LeadInfo:
             "format_instructions": parser.get_format_instructions()
         })
 
-        if name:
-            result.name = name
-        if phone:
-            result.contact = phone
+        # Устанавливаем извлечённые данные
+        result.name = name
+        result.contact = phone
 
         return result
 
