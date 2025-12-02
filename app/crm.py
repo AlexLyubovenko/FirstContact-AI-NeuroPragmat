@@ -13,19 +13,26 @@ async def send_lead_to_crm(lead: LeadInfo, user_id: str, full_name: str, channel
         return
 
     payload = {
-        "name": f"Запрос от {full_name or 'Клиент'}",
+        "name": f"Запрос от {lead.name or full_name or 'Клиента'}",
         "query": original_message,
         "tags": [
             "firstcontact_ai",
             lead.intent.replace("_", " "),
             "hot_lead" if lead.is_hot else "regular"
         ],
+        "contact": {
+            "name": lead.name or full_name or "",
+        },
         "custom_fields": {
             "ai_summary": lead.summary,
             "intent": lead.intent,
             "source": f"{channel} ({user_id})"
         }
     }
+
+    # Явно передаём телефон/email, если есть
+    if lead.contact:
+        payload["query"] += f"\nКонтакт: {lead.contact}"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

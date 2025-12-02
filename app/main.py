@@ -45,7 +45,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Спасибо за обращение! Менеджер свяжется с вами.")
         return
 
-    if lead_info.intent == "связаться_с_менеджером" or lead_info.is_hot:
+    # Умный ответ: не запрашиваем контакты, если они уже есть
+    if lead_info.name and lead_info.contact:
+        reply = f"Спасибо за ваш запрос! {lead_info.summary} Наш менеджер свяжется с вами в ближайшее время."
+    elif lead_info.intent == "связаться_с_менеджером" or lead_info.is_hot:
         reply = "Благодарю за обращение! Менеджер свяжется с вами в ближайшее время. Уточните, пожалуйста, ваше имя и телефон для ускорения."
     else:
         reply = f"Спасибо за ваш запрос! {lead_info.summary} Наш ассистент уже подбирает решение."
@@ -72,12 +75,12 @@ async def startup_event():
     await application.start()
 
     webhook_url = os.getenv("WEBHOOK_URL")
-    if webhook_url:
+    if webhook_path := webhook_url:
         try:
             await application.bot.set_webhook(webhook_url)
             logger.info(f"Telegram webhook установлен: {webhook_url}")
         except Exception as e:
-            logger.error(f"Ошибка webhook: {e}")
+            logger.error(f"Ошибка установки webhook: {e}")
     else:
         logger.warning("WEBHOOK_URL не задан")
 
