@@ -37,6 +37,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Получаем контекст из базы знаний
     context_str = ""
     if retriever:
         try:
@@ -45,43 +46,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Ошибка RAG: {e}")
 
+    # Анализируем сообщение
     try:
         lead_info = classify_and_qualify(user_message=text, context=context_str)
     except Exception as e:
         logger.error(f"Ошибка агента: {e}")
-        await update.message.reply_text("Спасибо за обращение! Менеджер свяжется с вами в ближайшее время.")
-        return
+        lead_info = None
 
-    # Живой диалог: спрашиваем контакты, если их нет
-    if not lead_info.name and not lead_info.contact:
-        if lead_info.intent in ["заказать_услугу", "узнать_цену", "связаться_с_менеджером"]:
+    # Формируем ответ бота
+    full_name = user.full_name or ""
+    if lead_info and lead_info.name:
+        name_to_use = lead_info.name
+    else:
+        name_to_use = full_name.split()[0] if full_name else "Клиент"
+
+    if lead_info and lead_info.intent in ["заказать_услугу", "узнать_цену", "связаться_с_менеджером"]:
+        if not (lead_info and (lead_info.name or lead_info.contact)):
             reply = (
-                "Благодарю за интерес к нашим услугам! 🙏\n\n"
-                "Чтобы менеджер мог оперативно с вами связаться, уточните, пожалуйста:\n"
+                f"Спасибо за интерес, {name_to_use}! 🙏\n\n"
+                "Чтобы менеджер оперативно с вами связался, уточните, пожалуйста:\n"
                 "• Ваше имя\n"
-                "• Телефон или email\n\n"
-                "Это займёт 10 секунд, но сильно ускорит решение вашего вопроса!"
+                "• Телефон или email"
             )
         else:
-            reply = f"Спасибо за ваш запрос! {lead_info.summary} Наш ассистент уже подбирает решение."
-    elif lead_info.name and not lead_info.contact:
-        reply = f"Спасибо, {lead_info.name}! Уточните, пожалуйста, ваш телефон или email — чтобы менеджер смог с вами связаться."
-    elif lead_info.contact and not lead_info.name:
-        reply = f"Спасибо за контактные данные! Уточните, пожалуйста, как к вам обращаться?"
+            reply = f"Отлично, {name_to_use}! Спасибо за ваш запрос. Менеджер свяжется с вами в ближайшее время."
     else:
-        reply = f"Отлично, {lead_info.name}! Спасибо за ваш запрос. Менеджер свяжется с вами в ближайшее время по номеру {lead_info.contact}."
+        reply = f"Спасибо за ваш запрос! Наш ассистент уже подбирает решение."
 
     await update.message.reply_text(reply)
 
-    # Отправляем в CRM ТОЛЬКО если есть хоть какая-то содержательная информация
-    if lead_info.intent != "задать_вопрос" or "привет" not in text.lower():
-        await send_lead_to_crm(
-            lead=lead_info,
-            user_id=str(user.id),
-            full_name=user.full_name or "",
-            channel="telegram",
-            original_message=text
-        )
+    # Отправляем ВСЕГДА в CRM (кроме приветствий)
+    await send_lead_to_crm(
+        lead=lead_info,
+        user_id=str(user.id),
+        full_name=full_name,
+        channel="telegram",
+        original_message=text
+    )
 
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

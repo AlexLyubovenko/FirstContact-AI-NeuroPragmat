@@ -12,24 +12,24 @@ async def send_lead_to_crm(lead: LeadInfo, user_id: str, full_name: str, channel
         logger.warning("ALBATO_WEBHOOK_URL не задан")
         return
 
-    # Не отправляем пустые запросы
-    if not original_message.strip() or len(original_message) < 5:
-        return
+    # Имя: сначала из агента, потом из Telegram, потом "Клиент"
+    name_for_crm = lead.name if lead and lead.name else (full_name or "Клиент")
 
     payload = {
-        "name": f"Запрос от {lead.name or full_name or 'Клиента'}",
+        "name": f"Запрос от {name_for_crm}",
         "query": original_message,
         "tags": [
             "firstcontact_ai",
-            lead.intent.replace("_", " "),
-            "hot_lead" if lead.is_hot else "regular"
+            lead.intent.replace("_", " ") if lead else "задать вопрос",
+            "hot_lead" if (lead and lead.is_hot) else "regular"
         ],
         "contact": {
-            "name": lead.name or full_name or "",
+            "name": name_for_crm,
+            "phone": lead.contact if lead else ""
         },
         "custom_fields": {
-            "ai_summary": lead.summary,
-            "intent": lead.intent,
+            "ai_summary": lead.summary if lead else original_message[:100],
+            "intent": lead.intent if lead else "задать_вопрос",
             "source": f"{channel} ({user_id})"
         }
     }
